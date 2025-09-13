@@ -1,0 +1,6 @@
+===custom definition
+_Name_ = function(_parameters_)
+	_code_
+	_code_
+	_code_
+end function
