@@ -1,0 +1,82 @@
+// =================================================================
+// MINISCRIPT LOGIC ENGINE TEMPLATE v2
+// =================================================================
+
+Component = {"inputs": [], "lastOutput": 0, "mask": 1, "gateType": "AND"}
+
+Component.init = function(numInputs, bitWidth=1, type="AND")
+	self.mask = 2^bitWidth - 1
+	self.gateType = type.upper
+	self.inputs = []
+	for i in range(1, numInputs); self.inputs.push 0; end for
+	self.compute
+	return self
+end function
+
+Component.setInput = function(idx, val)
+	if val != null then self.inputs[idx] = bitAnd(val, self.mask)
+	self.compute
+end function
+
+Component.setAllInputs = function(vals)
+	for i in range(0, vals.len - 1)
+		if i < self.inputs.len then self.setInput i, vals[i]
+	end for
+end function
+
+Component.compute = function()
+	if self.inputs.len == 0 then return 0
+	res = self.inputs[0]
+	
+	if self.inputs.len > 1 then
+		for i in range(1, self.inputs.len - 1)
+			n = self.inputs[i]
+			t = self.gateType
+			// We use 'else if' to ensure only ONE logic path is taken
+			if t == "AND" or t == "NAND" then
+				res = bitAnd(res, n)
+			else if t == "OR" or t == "NOR" then
+				res = bitOr(res, n)
+			else if t == "XOR" or t == "XNOR" then
+				res = bitXor(res, n)
+			end if
+		end for
+	end if
+	
+	// Final Inversion check
+	if ["NOT","NAND","NOR","XNOR"].indexOf(self.gateType) != null then
+		res = bitXor(res, self.mask)
+	end if
+	
+	self.lastOutput = bitAnd(res, self.mask)
+	return self.lastOutput
+end function
+
+// --- STARTER TEST ---
+
+// Inputs
+A = 1; B = 1; Cin = 1
+
+// --- Step 1: Initialize the necessary gates ---
+xor1 = new Component.init(2, 1, "XOR")
+xor2 = new Component.init(2, 1, "XOR")
+and1 = new Component.init(2, 1, "AND")
+and2 = new Component.init(2, 1, "AND")
+or1  = new Component.init(2, 1, "OR")
+
+// --- Step 2: Wire the gates ---
+// First Half Adder logic
+xor1.setAllInputs [A, B]
+and1.setAllInputs [A, B]
+
+// Second Half Adder logic
+xor2.setAllInputs [xor1.lastOutput, Cin]
+and2.setAllInputs [xor1.lastOutput, Cin]
+
+// Final Carry Out logic
+or1.setAllInputs [and1.lastOutput, and2.lastOutput]
+
+// --- Results ---
+print "Inputs: A=" + A + ", B=" + B + ", Cin=" + Cin
+print "Sum (S): " + xor2.lastOutput
+print "Carry Out (Cout): " + or1.lastOutput
