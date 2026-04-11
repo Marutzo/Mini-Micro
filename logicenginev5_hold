@@ -1,0 +1,131 @@
+// =================================================================
+// MINISCRIPT LOGIC ENGINE v4 (Stabilizing Circuit Manager)
+// =================================================================
+
+Component = {"inputs": [], "lastOutput": 0, "mask": 1, "gateType": "AND", "pending": 0}
+
+Component.init = function(numInputs, bitWidth=1, type="AND")
+	res = new Component
+	res.mask = 2^bitWidth - 1
+	res.gateType = type.upper
+	res.inputs = []
+	for i in range(1, numInputs); res.inputs.push 0; end for
+	return res
+end function
+
+// Logic calculation phase
+Component.compute = function()
+	if self.inputs.len == 0 then return 0
+	res = self.inputs[0]
+	t = self.gateType
+	if self.inputs.len > 1 then
+		for i in range(1, self.inputs.len - 1)
+			n = self.inputs[i]
+			if t == "AND" or t == "NAND" then res = bitAnd(res, n)
+			if t == "OR" or t == "NOR" then res = bitOr(res, n)
+			if t == "XOR" or t == "XNOR" then res = bitXor(res, n)
+		end for
+	end if
+	// Final Inversion check for "N" gates
+	if ["NOT","NAND","NOR","XNOR"].indexOf(t) != null then res = bitXor(res, self.mask)
+	self.pending = bitAnd(res, self.mask)
+end function
+
+// State commit phase
+Component.update = function(); self.lastOutput = self.pending; end function
+
+// --- CIRCUIT MANAGER ---
+Circuit = {"gates": [], "wiringFunc": null}
+
+Circuit.init = function(wiringAction)
+	res = new Circuit
+	res.gates = []
+	res.wiringFunc = @wiringAction // Store the "wire map" function
+	return res
+end function
+
+Circuit.add = function(gate)
+	self.gates.push gate
+	return gate
+end function
+
+// The engine: Runs a tick until signals stop changing or max iterations reached
+Circuit.tick = function(maxIters=10)
+	lastStates = []
+	for i in range(1, maxIters)
+		self.wiringFunc // 1. Run the wiring map to update inputs
+		for g in self.gates; g.compute; end for // 2. Calculate next states
+		for g in self.gates; g.update; end for  // 3. Commit states
+		
+		// Optimization: Stop if circuit is stable
+		currStates = []; for g in self.gates; currStates.push g.lastOutput; end for
+		if currStates == lastStates then break
+		lastStates = currStates
+	end for
+end function
+
+// =================================================================
+// UNIT TESTS & IMPLEMENTATION
+// =================================================================
+
+// Define global inputs for the circuit
+in_S = 0; in_R = 0;
+
+// Step 1: Define the wiring logic
+updateWires = function()
+	// The inputs only reach the latch if clock_val is 1
+	gateS.inputs = [in_S, clock_val]
+	gateR.inputs = [in_R, clock_val]
+	
+	// Wire the latch
+	or1.inputs = [gateS.lastOutput, and1.lastOutput]
+	not1.inputs = [gateR.lastOutput]
+	and1.inputs = [not1.lastOutput, or1.lastOutput]
+end function
+
+// Step 2: Setup the circuit
+sim = Circuit.init(@updateWires)
+or1   = sim.add(Component.init(2, 1, "OR"))
+and1  = sim.add(Component.init(2, 1, "AND"))
+not1  = sim.add(Component.init(1, 1, "NOT"))
+gateS = sim.add(Component.init(2, 1, "AND"))
+gateR = sim.add(Component.init(2, 1, "AND"))
+
+// --- Master Loop Configuration ---
+in_S = 0; in_R = 0;
+clock_val = 0
+last_tick_time = time
+tick_speed = 1
+
+print "Simulation Running. Press 'S' to Pulse Set, 'R' to Pulse Reset, 'Q' to Quit."
+
+while true
+    // 1. Reset inputs to 0 at the start of every loop (the "Pulse" logic)
+    in_S = 0
+    in_R = 0
+
+    // 2. GreyScript Polling Logic
+    k = poll_input
+    if k == "q" then break
+    if k == "s" then in_S = 1 // Pulses to 1 for this frame only
+    if k == "r" then in_R = 1
+	
+    // 3. Clock Toggle
+    if time > last_tick_time + tick_speed then
+        if clock_val == 0 then clock_val = 1 else clock_val = 0
+        last_tick_time = time
+    end if
+	
+    // 4. Run simulation with current (pulsed) inputs
+    sim.tick
+	
+    yield
+    print "INPUTS -> S: " + in_S + " | R: " + in_R, true
+    print "CLOCK  -> " + clock_val, true
+    print "STATE  -> " + and1.lastOutput, true
+    print "Controls: [S] Pulse Set | [R] Pulse Reset | [Q] Quit", true
+    
+    // GreyScript internal cooldown is 0.25s, so we wait 0.1 to stay responsive
+    wait(0.1) 
+end while
+
