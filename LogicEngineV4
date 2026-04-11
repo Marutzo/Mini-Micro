@@ -97,8 +97,6 @@ clock_val = 0
 last_tick_time = time
 tick_speed = 1
 
-print "Simulation Running. Press 'S' for Set, 'R' for Reset, 'ESC' to Quit."
-
 while not key.pressed("escape")
 	if key.pressed("s") then in_S = 1 else in_S = 0
 	if key.pressed("r") then in_R = 1 else in_R = 0
@@ -112,5 +110,7 @@ while not key.pressed("escape")
 	sim.tick
 	
 	yield
+	clear
+	print "Simulation Running. Press 'S' for Set, 'R' for Reset, 'ESC' to Quit."
 	print "S:" + in_S + " R:" + in_R + " | CLK:" + clock_val + " | State: " + and1.lastOutput
 end while
