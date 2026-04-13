@@ -1,0 +1,240 @@
+clear
+
+string.pad = function(length)
+	s = self
+	while s.len < length; s = s + " "; end while
+	return s
+end function
+
+// --- Set Helper Functions (using Maps) ---
+Set = {}
+Set.fromList = function(list); s = {}; for item in list; s[item] = 1; end for; return s; end function
+Set.toList = function(s); return s.indexes; end function
+Set.contains = function(s, item); return s.hasIndex(item); end function
+Set.union = function(s1, s2); res = {}; for k in s1.indexes + s2.indexes; res[k] = 1; end for; return res; end function
+// Converts a "set" (map) into a consistent string key for DFA states
+Set.toKey = function(s); idx = s.indexes; idx.sort; return idx.join(","); end function
+
+// --- Automaton Class ---
+Automaton = {}
+Automaton.transitions = {} // Key: "state|char", Value: Set (Map)
+Automaton.startState = ""
+Automaton.acceptStates = {}
+Automaton.alphabet = []
+
+Automaton.make = function(transitions, startState, acceptStates)
+	instance = new Automaton
+	instance.transitions = transitions
+	instance.startState = startState
+	instance.acceptStates = acceptStates
+	instance.alphabet = []
+	// Infer alphabet
+	found = {}
+	for key in transitions.indexes
+		char = key.split("|")[1]
+		if char != "" then found[char] = 1
+	end for
+	instance.alphabet = found.indexes
+	return instance
+end function
+
+Automaton.getEpsilonClosure = function(states)
+	closure = states + {} // Create a copy so we don't modify the input map
+	stack = states.indexes
+	while stack
+		state = stack.pull
+		key = state + "|"
+		if self.transitions.hasIndex(key) then
+			for nextState in self.transitions[key].indexes
+				if not closure.hasIndex(nextState) then
+					closure[nextState] = 1
+					stack.push nextState
+				end if
+			end for
+		end if
+	end while
+	return closure
+end function
+
+Automaton.matches = function(inputString)
+	currentStates = self.getEpsilonClosure(Set.fromList([self.startState]))
+	for i in range(0, inputString.len - 1)
+		char = inputString[i]
+		nextStates = {}
+		for state in currentStates.indexes
+			key = state + "|" + char
+			if self.transitions.hasIndex(key) then
+				nextStates = Set.union(nextStates, self.transitions[key])
+			end if
+		end for
+		currentStates = self.getEpsilonClosure(nextStates)
+	end for
+	
+	for s in currentStates.indexes
+		if self.acceptStates.hasIndex(s) then return true
+	end for
+	return false
+end function
+
+Automaton.matchesVerbose = function(inputString)
+	print "--- Tracing Input: '" + inputString + "' ---"
+	
+	// Check if this is an e-NFA
+	hasEpsilon = false
+	for key in self.transitions.indexes
+		if key.split("|")[1] == "" then hasEpsilon = true; break
+	end for
+	
+	currentStates = self.getEpsilonClosure(Set.fromList([self.startState]))
+	print "Step 0: Start -> {" + currentStates.indexes.join(",") + "}"
+	
+	for i in range(0, inputString.len - 1)
+		char = inputString[i]
+		
+		// Check alphabet
+		inAlphabet = false
+		for a in self.alphabet; if a == char then inAlphabet = true; end for
+		if not inAlphabet then
+			print "Step " + (i+1) + ": Read '" + char + "' (UNKNOWN) -> Machine halts."
+			currentStates = {}
+			break
+		end if
+		
+		movedStates = {}
+		for state in currentStates.indexes
+			key = state + "|" + char
+			if self.transitions.hasIndex(key) then
+				movedStates = Set.union(movedStates, self.transitions[key])
+			end if
+		end for
+		
+		currentStates = self.getEpsilonClosure(movedStates)
+		
+		if not hasEpsilon then
+			print "Step " + (i+1) + ": Read '" + char + "' -> {" + currentStates.indexes.join(",") + "}"
+		else
+			print "Step " + (i+1) + ": Read '" + char + "'"
+			print "   -> After Move: {" + movedStates.indexes.join(",") + "}"
+			print "   -> After e-closure: {" + currentStates.indexes.join(",") + "}"
+		end if
+	end for
+	
+	// Final check in matchesVerbose
+	isAccepted = false
+	for s in currentStates.indexes
+		// Explicitly check if the state name exists as a key in acceptStates
+		if self.acceptStates.hasIndex(s) then 
+			isAccepted = true
+			break
+		end if
+	end for
+	
+	status = "REJECTED"; if isAccepted then status = "ACCEPTED"
+	print "Final Result: " + status
+	return isAccepted
+end function
+
+Automaton.toDFA = function()
+	startClosure = self.getEpsilonClosure(Set.fromList([self.startState]))
+	startKey = Set.toKey(startClosure)
+	
+	dfaTrans = {}
+	dfaAccept = {}
+	processed = {}
+	queue = [startClosure]
+	
+	while queue
+		currentSet = queue.pull
+		currentKey = Set.toKey(currentSet)
+		if processed.hasIndex(currentKey) then continue
+		processed[currentKey] = 1
+		
+		// Check if accepting
+		for s in currentSet.indexes
+			if self.acceptStates.hasIndex(s) then
+				dfaAccept[currentKey] = 1
+				break
+			end if
+		end for
+		
+		for char in self.alphabet
+			nextNFA = {}
+			for s in currentSet.indexes
+				key = s + "|" + char
+				if self.transitions.hasIndex(key) then
+					nextNFA = Set.union(nextNFA, self.transitions[key])
+				end if
+			end for
+			
+			closure = self.getEpsilonClosure(nextNFA)
+			if closure.len > 0 then
+				closureKey = Set.toKey(closure)
+				dfaTrans[currentKey + "|" + char] = Set.fromList([closureKey])
+				if not processed.hasIndex(closureKey) then queue.push closure
+			end if
+		end for
+	end while
+	
+	return Automaton.make(dfaTrans, startKey, dfaAccept)
+end function
+
+Automaton.display = function()
+	print "Current State".pad(25) + " | " + "Input".pad(8) + " | " + "Next State"
+	print "-" * 60
+	for key in self.transitions.indexes
+		parts = key.split("|")
+		curr = parts[0]
+		char = parts[1]
+		if char == "" then char = "~"
+		
+		// Show next states as a list
+		nxt = self.transitions[key].indexes.join(", ")
+		print curr.pad(25) + " | " + char.pad(8) + " | " + nxt
+	end for
+end function
+
+
+
+// --- Usage ---
+
+// NFA for (a|b)*a
+nfaTrans = {}
+nfaTrans["q0|a"] = Set.fromList(["q0"])
+nfaTrans["q0|b"] = Set.fromList(["q0"])
+nfaTrans["q0|"]  = Set.fromList(["q1"]) // Epsilon to the 'finisher' branch
+nfaTrans["q1|a"] = Set.fromList(["q2"])
+
+// Transition table, start state, accept state.
+myNfa = Automaton.make(nfaTrans, "q0", Set.fromList(["q2"]))
+
+// Conversion
+myDfa = myNfa.toDFA
+
+// Simple 0/1, non-verbose. Should be 1, 1, 0.
+print "NFA matches 'ba': " + myNfa.matches("ba")
+print "DFA matches 'ba': " + myDfa.matches("ba")
+print "DFA matches 'b': " + myDfa.matches("b")
+
+// Fancy display of state table
+// showcase verbose.
+print
+myNfa.display()
+print
+myNfa.matchesVerbose("ba")
+print
+
+// 1. Define DFA Transitions (State|Input)
+dfaTrans = {}
+dfaTrans["s0|h"] = Set.fromList(["s1"])
+dfaTrans["s1|i"] = Set.fromList(["s2"])
+
+// 2. Create the Automaton
+// Start at s0, Accept at s2
+myDfa = Automaton.make(dfaTrans, "s0", Set.fromList(["s2"]))
+
+// 3. Display the transition table
+myDfa.display()
+
+// 4. Test it
+myDfa.matchesVerbose("hi")  // Should be ACCEPTED
+myDfa.matchesVerbose("ha")  // Should be REJECTED
