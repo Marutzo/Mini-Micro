@@ -1,0 +1,44 @@
+import "eval"
+
+// Creates a callable object from a string (e.g., "x, y : x * y")
+createLambda = function(definition)
+	// Split the input into parameters and the math expression
+	parts = definition.split(":")
+	parameterString = parts[0]
+	expressionString = parts[1]
+	
+	// Create a 'Task' map to store the function's data and logic
+	lambdaTask = {}
+	lambdaTask.expression = expressionString
+	lambdaTask.paramNames = parameterString.split(",")
+	
+	// Clean up parameter names (removes spaces like " x" -> "x")
+	for i in lambdaTask.paramNames.indexes
+		lambdaTask.paramNames[i] = lambdaTask.paramNames[i].trim
+	end for
+	
+	// The execution method
+	lambdaTask.call = function(val1=null, val2=null, val3=null)
+		// Map the provided arguments to the evaluator's variable scope
+		argValues = [val1, val2, val3]
+		for i in self.paramNames.indexes
+			name = self.paramNames[i]
+			value = argValues[i]
+			eval.vars[name] = value
+		end for
+		
+		// Parse and return the result using Joe Strout's eval module
+		return eval.eval(self.expression)
+	end function
+	
+	return lambdaTask
+end function
+
+// --- Usage ---
+// Create a multiply-plus-ten lambda
+myLambda = createLambda("x, y : x * y + 10")
+
+// Execute and print result
+print myLambda.call(5, 2) // Expected Output: 20
+
+// Or as a one-line: print createLambda("x, y : x * y + 10").call(5, 2)
